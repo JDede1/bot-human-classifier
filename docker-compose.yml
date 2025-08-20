@@ -1,0 +1,100 @@
+# docker-compose.yml
+services:
+
+  # --------------------------- PostgreSQL (database) ---------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-appdb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --------------------------- pgAdmin (DB web UI) ----------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8.12
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+  # --------------------------- MLflow Tracking UI -----------------------------
+  mlflow:
+    build:
+      context: ./mlflow
+    container_name: mlflow
+    environment:
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:-mlflow}
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlruns:/mlruns
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # --------------------------- FastAPI (your app) -----------------------------
+  api:
+    build: ./api
+    container_name: api
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-appdb}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      APP_VERSION: ${APP_VERSION:-0.0.1}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - ./api:/app           # mount API code
+      - ./src:/src           # mount ingestion scripts
+      - ./data:/data         # mount dataset
+
+  # --------------------------- Prometheus (metrics) ---------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  # --------------------------- Grafana (dashboards) ---------------------------
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+# --------------------------- Reusable Volumes ---------------------------
+volumes:
+  db_data:
+  mlruns:
