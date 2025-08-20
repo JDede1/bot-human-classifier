@@ -1,4 +1,35 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.log
+
+# Environment / secrets
 .env
+*.env
+
+# MLflow artifacts (logged runs, models)
 mlruns/
+
+# Docker volumes & local data
+db_data/
+*.db
+
+# VSCode / Codespaces
+.vscode/
+.history/
+*.code-workspace
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build / cache
+*.egg-info/
+dist/
+build/
